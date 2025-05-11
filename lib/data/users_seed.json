@@ -1,8 +1,8 @@
 {
   "Dummy": {
-    "ic": "123456789012",
-    "email": "aihanif.developer@gmail.com",
-    "name": "Dummy Lecturer",
+    "ic": "123456789010",
+    "email": "hanifworkmy@gmail.com",
+    "name": "Dummy",
     "role": "lecturer",
     "mustChangePassword": true
   }

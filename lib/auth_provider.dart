@@ -5,13 +5,15 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Represents a user profile in Firestore `users/{docId}`
+/// Represents a user profile in Firestore `users/{docId}`,
+/// now including their avatar URL.
 class UserProfile {
   final String uid;               // Firestore doc ID
   final String name;
   final String email;
   final String role;
   final bool mustChangePassword;
+  final String? photoUrl;         // ← NEW field for avatar
 
   UserProfile({
     required this.uid,
@@ -19,15 +21,17 @@ class UserProfile {
     required this.email,
     required this.role,
     required this.mustChangePassword,
+    this.photoUrl,
   });
 
   factory UserProfile.fromFirestore(String docId, Map<String, dynamic> data) {
     return UserProfile(
       uid                : docId,
-      name               : data['name']               as String? ?? '',
-      email              : data['email']              as String? ?? '',
-      role               : data['role']               as String? ?? 'student',
-      mustChangePassword : data['mustChangePassword'] as bool?   ?? false,
+      name               : data['name']               as String?  ?? '',
+      email              : data['email']              as String?  ?? '',
+      role               : data['role']               as String?  ?? 'student',
+      mustChangePassword : data['mustChangePassword'] as bool?    ?? false,
+      photoUrl           : data['photoUrl']           as String?,      // ← read it here
     );
   }
 }
@@ -43,19 +47,17 @@ class AuthProvider extends ChangeNotifier {
   bool         get isLoading   => _loading;
 
   AuthProvider() {
-    // Keep _profile in sync, but don't force a sign-out on missing Firestore doc.
+    // Listen for auth changes, then hydrate Firestore profile
     _auth.authStateChanges().listen(_onAuthStateChanged);
   }
 
   Future<void> _onAuthStateChanged(User? user) async {
     _loading = true;
     if (user == null) {
-      // user signed out externally
       _profile = null;
-
     } else {
-      // hydrate profile by matching email
       try {
+        // 1️⃣ Pull the Firestore record by email
         final snapshot = await _firestore
             .collection('users')
             .where('email', isEqualTo: user.email)
@@ -63,17 +65,16 @@ class AuthProvider extends ChangeNotifier {
             .get();
 
         if (snapshot.docs.isNotEmpty) {
-          final doc      = snapshot.docs.first;
+          final doc = snapshot.docs.first;
           _profile = UserProfile.fromFirestore(doc.id, doc.data());
         } else {
-          // No Firestore record: just clear local profile, but don't auto sign-out
           debugPrint(
-              '[AuthProvider] ⚠️ No user document for ${user.email}; _profile set to null.'
+              '[AuthProvider] ⚠️ No Firestore user doc for ${user.email}; '
+                  'setting local profile to null.'
           );
           _profile = null;
         }
       } catch (e) {
-        // On any Firestore error, leave profile null but keep the auth session
         debugPrint('[AuthProvider] ❌ Firestore lookup failed: $e');
         _profile = null;
       }
@@ -83,10 +84,9 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sign in by IC + password.
-  /// Immediately returns a concrete UserProfile on success.
+  /// Sign in by IC + password: hydrates profile immediately.
   Future<UserProfile> signInWithIC(String ic, String password) async {
-    // 1) Lookup Firestore record by IC
+    // Lookup Firestore record by IC
     final query = await _firestore
         .collection('users')
         .where('ic', isEqualTo: ic)
@@ -109,18 +109,18 @@ class AuthProvider extends ChangeNotifier {
       );
     }
 
-    // 2) Delegate to FirebaseAuth
+    // Authenticate
     await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-    // 3) Hydrate profile immediately to avoid race
+    // Immediately fetch the Firestore profile to avoid UI lag
     final postQuery = await _firestore
         .collection('users')
         .where('email', isEqualTo: email)
         .limit(1)
         .get();
 
-    final doc      = postQuery.docs.first;
-    final profile  = UserProfile.fromFirestore(doc.id, doc.data());
+    final doc     = postQuery.docs.first;
+    final profile = UserProfile.fromFirestore(doc.id, doc.data());
 
     _profile = profile;
     _loading = false;
@@ -149,6 +149,7 @@ class AuthProvider extends ChangeNotifier {
 
     final methods = await _auth.fetchSignInMethodsForEmail(email);
     if (methods.isEmpty) {
+      // Create temp user if none exists
       const chars   = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
       final rnd     = Random.secure();
       final tempPwd = List.generate(16, (_) => chars[rnd.nextInt(chars.length)]).join();

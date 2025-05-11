@@ -115,11 +115,11 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
           _showSnack('Rekod pengguna tidak mempunyai email.', Colors.redAccent);
           _logDebug('Email field missing in Firestore for IC $ic');
         } else {
-          // Ensure Auth user exists
           _logDebug('Checking sign-in methods for $email');
           final methods = await _auth.fetchSignInMethodsForEmail(email);
           _logDebug('Sign-in methods: $methods');
 
+          // If there's no existing auth user, create one—but immediately sign it out.
           if (methods.isEmpty) {
             final tempPwd = _generateTempPassword();
             _logDebug('Creating Auth user for $email with temp password.');
@@ -128,7 +128,12 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
               password: tempPwd,
             );
             _logDebug('Auth user created: ${userCred.user?.uid}');
-            // mark mustChangePassword
+
+            // **Prevent automatic login** by signing out right away
+            await _auth.signOut();
+            _logDebug('User session signed out after creation to maintain original context.');
+
+            // Mark mustChangePassword in Firestore
             await _firestore.collection('users').doc(doc.id).update({
               'mustChangePassword': true,
             });
@@ -136,7 +141,7 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
           }
 
           _logDebug('Sending standard password reset email to $email');
-          await _auth.sendPasswordResetEmail(email: email);  // ← no ActionCodeSettings
+          await _auth.sendPasswordResetEmail(email: email);
           _showSnack('Link reset dihantar ke $email', Colors.green);
           _logDebug('Password reset email sent');
         }
@@ -269,27 +274,6 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
 
                           const SizedBox(height: 24),
 
-                          // Terms & Privacy links
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  _logDebug('Terms & Conditions tapped');
-                                  // TODO: launch URL
-                                },
-                                child: const Text('Terma', style: TextStyle(decoration: TextDecoration.underline, color: Colors.white70)),
-                              ),
-                              const SizedBox(width: 16),
-                              TextButton(
-                                onPressed: () {
-                                  _logDebug('Privacy Policy tapped');
-                                  // TODO: launch URL
-                                },
-                                child: const Text('Privasi', style: TextStyle(decoration: TextDecoration.underline, color: Colors.white70)),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
                     ),
