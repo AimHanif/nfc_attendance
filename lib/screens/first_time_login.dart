@@ -1,18 +1,16 @@
-// lib/screens/first_time_login.dart
-
 import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:provider/provider.dart';
 
+import '../auth_provider.dart' as local_auth;
+import '../main.dart';
 import '../ui/background.dart';
 
-/// FirstTimeLoginScreen allows a user to request a one-time setup link via email.
-/// It supports debug logging, connectivity checks, terms & privacy, and retry logic.
 class FirstTimeLoginScreen extends StatefulWidget {
   const FirstTimeLoginScreen({Key? key}) : super(key: key);
 
@@ -22,7 +20,7 @@ class FirstTimeLoginScreen extends StatefulWidget {
 
 class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _icCtrl = TextEditingController();
+  final TextEditingController _matricCtrl = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -43,17 +41,15 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
   void dispose() {
     _logDebug('dispose called');
     _connectivitySub?.cancel();
-    _icCtrl.dispose();
+    _matricCtrl.dispose();
     super.dispose();
   }
 
-  /// Monitors network connectivity and updates UI.
   void _monitorConnectivity() {
     _logDebug('Starting connectivity monitoring');
     _connectivitySub = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
-      // pick the first available network type, if any
       final primary = results.isNotEmpty ? results.first : ConnectivityResult.none;
       setState(() {
         _connectivityStatus = results.toString();
@@ -63,7 +59,6 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
     });
   }
 
-  /// Adds a message to debug log and prints to console.
   void _logDebug(String message) {
     final timestamp = DateTime.now().toIso8601String();
     final log = '[$timestamp] DEBUG: $message';
@@ -74,7 +69,6 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
     }
   }
 
-  /// Generates a random temporary password.
   String _generateTempPassword([int length = 16]) {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final rnd = Random.secure();
@@ -82,80 +76,26 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
   }
 
   Future<void> _sendSetupLink() async {
-    _logDebug('sendSetupLink called');
-    if (!_isConnected) {
-      _showSnack('Tiada sambungan internet.', Colors.orange);
-      return;
-    }
-    if (!_formKey.currentState!.validate()) {
-      _logDebug('Form validation failed');
-      return;
-    }
     setState(() => _isLoading = true);
 
-    final ic = _icCtrl.text.trim();
-    _logDebug('Looking up IC: $ic');
-
     try {
-      final query = await _firestore
-          .collection('users')
-          .where('ic', isEqualTo: ic)
-          .limit(1)
-          .get();
-      _logDebug('Firestore query returned ${query.docs.length} docs');
+      await Provider.of<local_auth.AuthProvider>(context, listen: false)
+          .sendResetLinkByMatricNo(_matricCtrl.text.trim());
 
-      if (query.docs.isEmpty) {
-        _showSnack('Tiada akaun ditemui untuk IC tersebut.', Colors.redAccent);
-        _logDebug('No user found for IC $ic');
-      } else {
-        final doc = query.docs.first;
-        final data = doc.data();
-        final email = data['email'] as String?;
-        if (email == null || email.isEmpty) {
-          _showSnack('Rekod pengguna tidak mempunyai email.', Colors.redAccent);
-          _logDebug('Email field missing in Firestore for IC $ic');
-        } else {
-          _logDebug('Checking sign-in methods for $email');
-          final methods = await _auth.fetchSignInMethodsForEmail(email);
-          _logDebug('Sign-in methods: $methods');
+      _showSnack(
+        'A password setup link has been sent to your registered email.',
+        Colors.green,
+      );
 
-          // If there's no existing auth user, create one—but immediately sign it out.
-          if (methods.isEmpty) {
-            final tempPwd = _generateTempPassword();
-            _logDebug('Creating Auth user for $email with temp password.');
-            final userCred = await _auth.createUserWithEmailAndPassword(
-              email: email,
-              password: tempPwd,
-            );
-            _logDebug('Auth user created: ${userCred.user?.uid}');
-
-            // **Prevent automatic login** by signing out right away
-            await _auth.signOut();
-            _logDebug('User session signed out after creation to maintain original context.');
-
-            // Mark mustChangePassword in Firestore
-            await _firestore.collection('users').doc(doc.id).update({
-              'mustChangePassword': true,
-            });
-            _logDebug('mustChangePassword flag set in Firestore');
-          }
-
-          _logDebug('Sending standard password reset email to $email');
-          await _auth.sendPasswordResetEmail(email: email);
-          _showSnack('Link reset dihantar ke $email', Colors.green);
-          _logDebug('Password reset email sent');
-        }
-      }
-    } catch (e, st) {
-      _showSnack('Ralat: $e', Colors.redAccent);
-      _logDebug('Error in sendSetupLink: $e\n$st');
+      await FirebaseAuth.instance.signOut();
+      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+    } catch (e) {
+      _showSnack('Error: $e', Colors.redAccent);
     } finally {
       setState(() => _isLoading = false);
-      _logDebug('sendSetupLink completed');
     }
   }
 
-  /// Displays a SnackBar with given message and color.
   void _showSnack(String message, Color bgColor) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -165,7 +105,6 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
     );
   }
 
-  /// Builds the debug console widget.
   Widget _buildDebugConsole() {
     return ExpansionTile(
       title: const Text('Debug Console', style: TextStyle(color: Colors.white70)),
@@ -195,7 +134,10 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
       extendBodyBehindAppBar: true,
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: Text('Log Masuk Pertama Kali', style: textTheme.titleLarge?.copyWith(color: Colors.white)),
+        title: Text(
+          'First-Time Login',
+          style: textTheme.titleLarge?.copyWith(color: Colors.white),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -206,54 +148,56 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Masukkan No. IC untuk menerima pautan reset kata laluan melalui emel terdaftar.',
-                      style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                      'Enter your Matric No to receive a password reset link via your registered email.',
+                      style: textTheme.bodyMedium
+                          ?.copyWith(color: Colors.white70),
                       textAlign: TextAlign.center,
                     ),
-
                     const SizedBox(height: 24),
-
-                    // Connectivity status indicator
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
                           _isConnected ? Icons.wifi : Icons.wifi_off,
-                          color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+                          color:
+                          _isConnected ? Colors.greenAccent : Colors.redAccent,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Sambungan: $_connectivityStatus',
-                          style: textTheme.bodySmall?.copyWith(color: Colors.white70),
+                          'Status: $_connectivityStatus',
+                          style: textTheme.bodySmall
+                              ?.copyWith(color: Colors.white70),
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 32),
-
-                    // IC input form
                     Form(
                       key: _formKey,
                       child: Column(
                         children: [
                           TextFormField(
-                            controller: _icCtrl,
-                            keyboardType: TextInputType.number,
-                            style: textTheme.bodyMedium?.copyWith(color: Colors.white),
+                            controller: _matricCtrl,
+                            keyboardType: TextInputType.text,
+                            style: textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white),
                             decoration: InputDecoration(
-                              labelText: 'No. IC',
-                              labelStyle: textTheme.bodyMedium?.copyWith(color: Colors.white70),
-                              prefixIcon: const Icon(Icons.badge, color: Colors.white70),
+                              labelText: 'Matric No',
+                              labelStyle: textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white70),
+                              prefixIcon:
+                              const Icon(Icons.credit_card, color: Colors.white70),
                               filled: true,
                               fillColor: Colors.white24,
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Colors.white54),
+                                borderSide:
+                                const BorderSide(color: Colors.white54),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -261,26 +205,22 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
                               ),
                             ),
                             validator: (v) {
-                              final ic = v?.trim() ?? '';
-                              if (ic.isEmpty) {
-                                return 'IC diperlukan';
+                              final matric = v?.trim() ?? '';
+                              if (matric.isEmpty) {
+                                return 'Matric No required';
                               }
-                              if (!RegExp(r'^\d{12}$').hasMatch(ic)) {
-                                return 'Sila masukkan 12 digit IC yang sah';
+                              if (!RegExp(r'^[A-Za-z]{2}\d{6}$')
+                                  .hasMatch(matric)) {
+                                return 'Example: DI230101';
                               }
                               return null;
                             },
                           ),
-
                           const SizedBox(height: 24),
-
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 32),
-
-                    // Submit button
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -289,24 +229,30 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
                             ? const SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
                         )
                             : const Icon(Icons.email, color: Colors.white),
                         label: Text(
-                          _isLoading ? 'Menghantar...' : 'Hantar Pautan',
-                          style: textTheme.titleMedium?.copyWith(color: Colors.white),
+                          _isLoading ? 'Sending...' : 'Send Link',
+                          style: textTheme.titleMedium
+                              ?.copyWith(color: Colors.white),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isConnected ? const Color(0xFF26A69A) : Colors.grey,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          backgroundColor:
+                          _isConnected ? const Color(0xFF26A69A) : Colors.grey,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        onPressed: _isLoading || !_isConnected ? null : _sendSetupLink,
+                        onPressed: _isLoading || !_isConnected
+                            ? null
+                            : _sendSetupLink,
                       ),
                     ),
-
                     const SizedBox(height: 32),
-
-                    // Debug console
                     _buildDebugConsole(),
                   ],
                 ),

@@ -1,4 +1,4 @@
-// lib/screens/forgot_password.dart
+// All `ic` replaced with `matricNo`, label/validator matches DI230101
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -8,14 +8,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../ui/background.dart';
 
-/// A fully featured "Forgot Password" screen:
-/// - Animated background
-/// - Connectivity monitoring (List<ConnectivityResult>)
-/// - IC → email lookup in Firestore
-/// - Countdown timer for resend
-/// - Debug console
-/// - Smooth animations
-/// - Error handling and snackbars
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({Key? key}) : super(key: key);
 
@@ -25,24 +17,19 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with TickerProviderStateMixin {
-  // Form controllers & state
-  final TextEditingController _icCtrl = TextEditingController();
+  final TextEditingController _matricCtrl = TextEditingController();
   String? _email;
   bool _isLoading = false;
 
-  // Connectivity
   bool _isConnected = true;
   String _connectivityStatus = 'Unknown';
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
-  // Debug logs
   final List<String> _debugLogs = [];
 
-  // Resend timer
   Timer? _resendTimer;
   int _secondsRemaining = 0;
 
-  // Animations
   late final AnimationController _mainController;
   late final Animation<double> _titleScale;
   late final Animation<double> _formFade;
@@ -77,12 +64,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     _logDebug('dispose called');
     _connectivitySub?.cancel();
     _resendTimer?.cancel();
-    _icCtrl.dispose();
+    _matricCtrl.dispose();
     _mainController.dispose();
     super.dispose();
   }
 
-  /// Monitor network connectivity (emits List<ConnectivityResult>)
   void _monitorConnectivity() {
     _logDebug('Starting connectivity monitoring');
     _connectivitySub = Connectivity()
@@ -99,7 +85,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     });
   }
 
-  /// Add a debug entry
   void _logDebug(String message) {
     final ts = DateTime.now().toIso8601String();
     final entry = '[$ts] DEBUG: $message';
@@ -108,17 +93,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     if (_debugLogs.length > 500) _debugLogs.removeAt(0);
   }
 
-  /// Lookup email in Firestore by IC
-  Future<String?> _lookupEmail(String ic) async {
-    _logDebug('Looking up email for IC: $ic');
+  Future<String?> _lookupEmail(String matricNo) async {
+    _logDebug('Looking up email for Matric No: $matricNo');
     try {
       final query = await FirebaseFirestore.instance
           .collection('users')
-          .where('ic', isEqualTo: ic)
+          .where('matricNo', isEqualTo: matricNo)
           .limit(1)
           .get();
       if (query.docs.isEmpty) {
-        _logDebug('No user doc for IC $ic');
+        _logDebug('No user doc for Matric No $matricNo');
         return null;
       }
       final email = query.docs.first.data()['email'] as String?;
@@ -130,23 +114,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     }
   }
 
-  /// Send password reset link
   Future<void> _sendResetLink() async {
-    final ic = _icCtrl.text.trim();
+    final matricNo = _matricCtrl.text.trim();
     if (!_isConnected) {
       _showSnack('No internet connection', Colors.orangeAccent);
       return;
     }
-    if (!RegExp(r'^\d{12}$').hasMatch(ic)) {
-      _showSnack('Please enter a valid 12-digit IC number', Colors.redAccent);
+    if (!RegExp(r'^[A-Za-z]{2}\d{6}$').hasMatch(matricNo)) {
+      _showSnack('Please enter a valid Matric No (e.g. DI230101)', Colors.redAccent);
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final email = await _lookupEmail(ic);
+    final email = await _lookupEmail(matricNo);
     if (email == null) {
-      _showSnack('No account found for IC $ic', Colors.redAccent);
+      _showSnack('No account found for Matric No $matricNo', Colors.redAccent);
       setState(() => _isLoading = false);
       return;
     }
@@ -167,7 +150,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     }
   }
 
-  /// Countdown before allowing resend
   void _startResendCountdown() {
     _resendTimer?.cancel();
     setState(() => _secondsRemaining = 60);
@@ -180,7 +162,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     });
   }
 
-  /// Display a SnackBar
   void _showSnack(String msg, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -226,7 +207,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   FadeTransition(
                     opacity: _formFade,
                     child: Text(
-                      'Enter your 12-digit IC and we’ll send a reset link to your registered email.',
+                      'Enter your Matric No (e.g. DI230101) and we’ll send a reset link to your registered email.',
                       style: GoogleFonts.poppins(
                         color: Colors.white70,
                         fontSize: 16,
@@ -240,14 +221,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                     children: [
                       Icon(
                         _isConnected ? Icons.wifi : Icons.wifi_off,
-                        color:
-                        _isConnected ? Colors.greenAccent : Colors.redAccent,
+                        color: _isConnected ? Colors.greenAccent : Colors.redAccent,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         _connectivityStatus,
-                        style:
-                        textTheme.bodySmall?.copyWith(color: Colors.white70),
+                        style: textTheme.bodySmall?.copyWith(color: Colors.white70),
                       ),
                     ],
                   ),
@@ -255,14 +234,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   FadeTransition(
                     opacity: _formFade,
                     child: TextField(
-                      controller: _icCtrl,
-                      keyboardType: TextInputType.number,
+                      controller: _matricCtrl,
+                      keyboardType: TextInputType.text,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        labelText: 'IC Number',
+                        labelText: 'Matric No',
                         labelStyle: const TextStyle(color: Colors.white70),
-                        prefixIcon:
-                        const Icon(Icons.badge, color: Colors.white70),
+                        prefixIcon: const Icon(Icons.credit_card, color: Colors.white70),
                         filled: true,
                         fillColor: Colors.white12,
                         border: OutlineInputBorder(
@@ -285,8 +263,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                          AlwaysStoppedAnimation(Colors.white),
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
                         ),
                       )
                           : const Icon(Icons.email),
@@ -294,12 +271,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                         _secondsRemaining > 0
                             ? 'Resend in $_secondsRemaining s'
                             : 'Send Reset Link',
-                        style: textTheme.titleMedium
-                            ?.copyWith(color: Colors.white),
+                        style: textTheme.titleMedium?.copyWith(color: Colors.white),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                        _isLoading ? Colors.grey : Colors.redAccent,
+                        backgroundColor: _isLoading ? Colors.grey : Colors.redAccent,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -310,22 +285,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   if (_email != null) ...[
                     Text(
                       'Link will be sent to:',
-                      style: textTheme.bodyMedium
-                          ?.copyWith(color: Colors.white70),
+                      style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 4),
                     Text(
                       _email!,
-                      style:
-                      textTheme.bodyMedium?.copyWith(color: Colors.white),
+                      style: textTheme.bodyMedium?.copyWith(color: Colors.white),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
                   ],
                   ExpansionTile(
-                    title: const Text('Debug Console',
-                        style: TextStyle(color: Colors.white70)),
+                    title: const Text('Debug Console', style: TextStyle(color: Colors.white70)),
                     children: [
                       Container(
                         height: 200,
@@ -333,12 +305,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                         child: ListView.builder(
                           itemCount: _debugLogs.length,
                           itemBuilder: (ctx, i) => Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8.0, vertical: 2.0),
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
                             child: Text(
                               _debugLogs[i],
-                              style: const TextStyle(
-                                  color: Colors.greenAccent, fontSize: 10),
+                              style: const TextStyle(color: Colors.greenAccent, fontSize: 10),
                             ),
                           ),
                         ),

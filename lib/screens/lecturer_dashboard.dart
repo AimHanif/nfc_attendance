@@ -221,7 +221,7 @@ class _LecturerDashboardState extends State<LecturerDashboard>
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) => const ReadCardPage()),
+                                  builder: (_) => ReadCardPage()),
                             ),
                           ),
                           _buildActionCard(

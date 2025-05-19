@@ -58,7 +58,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.login: (_) => const LoginScreen(),
         AppRoutes.firstTimeLogin: (_) => const FirstTimeLoginScreen(),
         AppRoutes.write: (_) => const WriteCardPage(),
-        AppRoutes.read: (_) => const ReadCardPage(),
+        AppRoutes.read: (_) => ReadCardPage(),
         AppRoutes.lecturerDashboard: (_) => const LecturerDashboard(),
         AppRoutes.studentDashboard: (_) => const StudentDashboard(),
       },
@@ -203,11 +203,24 @@ class AuthWrapper extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        // Unauthenticated → Login
         if (auth.userProfile == null) {
           return const LoginScreen();
         }
-        // Authenticated → Role-based dashboard
+        // only force password-change flow for non-students
+        if (auth.userProfile!.role != 'student'
+            && auth.userProfile!.mustChangePassword) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            await auth.signOut();
+            Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+          });
+          return const Scaffold(
+            body: Center(
+              child: Text(
+                'You must set your password. Check your email for the link.',
+              ),
+            ),
+          );
+        }
         return auth.userProfile!.role == 'student'
             ? const StudentDashboard()
             : const LecturerDashboard();
@@ -215,6 +228,7 @@ class AuthWrapper extends StatelessWidget {
     );
   }
 }
+
 
 // ---------------------------------------------------------------------------
 // Decorative UI components (AppHeader, AppFooter, NavButton, etc).

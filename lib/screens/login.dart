@@ -10,7 +10,6 @@ import '../main.dart'; // AppRoutes
 import 'forgot_password.dart';
 import 'first_time_login.dart';
 
-/// Enterprise-grade login screen with immediate profile return.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
@@ -20,24 +19,24 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _icCtrl   = TextEditingController();
+  final _matricCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
 
-  bool _isLoading      = false;
+  bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _rememberMe     = false;
-  bool _isPressed      = false;
-  bool _isConnected    = true;
+  bool _rememberMe = false;
+  bool _isPressed = false;
+  bool _isConnected = true;
   String _connectivityStatus = 'Unknown';
 
   late StreamSubscription<List<ConnectivityResult>> _connectivitySub;
   final List<String> _debugLogs = [];
 
   late final AnimationController _logoController;
-  late final Animation<double>   _logoAnimation;
+  late final Animation<double> _logoAnimation;
   late final AnimationController _fieldsController;
-  late final Animation<double>   _fieldsSlide;
-  late final Animation<double>   _fieldsFade;
+  late final Animation<double> _fieldsSlide;
+  late final Animation<double> _fieldsFade;
 
   @override
   void initState() {
@@ -65,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _logoController.dispose();
     _fieldsController.dispose();
     _connectivitySub.cancel();
-    _icCtrl.dispose();
+    _matricCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
@@ -102,13 +101,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       _isLoading = true;
       _isPressed = false;
     });
-    _logDebug('Login attempt IC=${_icCtrl.text.trim()}');
+    _logDebug('Login attempt MatricNo=${_matricCtrl.text.trim()}');
 
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
 
-      // <-- now returns UserProfile directly
-      final profile = await auth.signInWithIC(_icCtrl.text.trim(), _passCtrl.text);
+      final profile = await auth.signInWithIdentifier(_matricCtrl.text.trim(), _passCtrl.text);
 
       _logDebug('Authenticated & profile loaded for ${profile.email}');
 
@@ -121,7 +119,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       }
     } on FirebaseAuthException catch (e) {
       final msg = {
-        'user-not-found': 'No account for that IC.',
+        'user-not-found': 'No account for that Matric No.',
         'wrong-password': 'Incorrect password.',
       }[e.code] ?? e.message ?? 'Login failed.';
       _showError(msg);
@@ -146,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final screenW   = MediaQuery.of(context).size.width;
+    final screenW = MediaQuery.of(context).size.width;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -188,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                       key: _formKey,
                       child: Column(
                         children: [
-                          // IC Number
+                          // Matric No
                           AnimatedBuilder(
                             animation: _fieldsController,
                             builder: (_, child) => Opacity(
@@ -199,14 +197,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                               ),
                             ),
                             child: TextFormField(
-                              controller: _icCtrl,
-                              keyboardType: TextInputType.number,
+                              controller: _matricCtrl,
+                              keyboardType: TextInputType.text,
                               style: textTheme.bodyLarge?.copyWith(color: Colors.white),
                               decoration: InputDecoration(
-                                labelText: 'IC Number',
+                                labelText: 'Matric No/Staff No',
                                 labelStyle: const TextStyle(color: Colors.white70),
-                                prefixIcon: const Icon(Icons.badge, color: Colors.white70),
-                                filled: true, fillColor: Colors.white24,
+                                prefixIcon: const Icon(Icons.credit_card, color: Colors.white70),
+                                filled: true,
+                                fillColor: Colors.white24,
                                 enabledBorder: OutlineInputBorder(
                                   borderSide: const BorderSide(color: Colors.white54),
                                   borderRadius: BorderRadius.circular(12),
@@ -217,9 +216,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 ),
                               ),
                               validator: (v) {
-                                final ic = v?.trim() ?? '';
-                                if (ic.isEmpty) return 'IC is required';
-                                if (!RegExp(r'^\d{12}$').hasMatch(ic)) return 'Enter a valid 12-digit IC';
+                                final input = v?.trim() ?? '';
+                                if (input.isEmpty) {
+                                  return 'Matric No or Staff No is required';
+                                }
+                                final matricRegex = RegExp(r'^[A-Za-z]{2}\d{6}$');
+                                final staffRegex = RegExp(r'^\d+$');
+                                if (!matricRegex.hasMatch(input) && !staffRegex.hasMatch(input)) {
+                                  return 'Enter a valid Matric No (e.g. DI230101) or Staff No (e.g. 1023)';
+                                }
                                 return null;
                               },
                             ),
@@ -390,7 +395,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   }
 }
 
-/// Animated purple-gradient button
 class GradientButton extends StatelessWidget {
   final VoidCallback onPressed;
   final Widget icon;

@@ -1,53 +1,54 @@
-// lib/auth_provider.dart
-
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Represents a user profile in Firestore `users/{docId}`,
-/// now including their avatar URL.
 class UserProfile {
-  final String uid;               // Firestore doc ID
+  final String uid;
+  final String? staffNumber;
+  final String? matricNumber;
   final String name;
   final String email;
   final String role;
   final bool mustChangePassword;
-  final String? photoUrl;         // ← NEW field for avatar
+  final String? photoUrl;
 
   UserProfile({
     required this.uid,
     required this.name,
     required this.email,
     required this.role,
+    required this.matricNumber,
+    required this.staffNumber,
     required this.mustChangePassword,
     this.photoUrl,
   });
 
   factory UserProfile.fromFirestore(String docId, Map<String, dynamic> data) {
     return UserProfile(
-      uid                : docId,
-      name               : data['name']               as String?  ?? '',
-      email              : data['email']              as String?  ?? '',
-      role               : data['role']               as String?  ?? 'student',
-      mustChangePassword : data['mustChangePassword'] as bool?    ?? false,
-      photoUrl           : data['photoUrl']           as String?,      // ← read it here
+      uid: docId,
+      staffNumber: data['staffNumber'] as String?,
+      matricNumber: data['matricNumber'] as String?,
+      name: data['name'] as String? ?? '',
+      email: data['email'] as String? ?? '',
+      role: data['role'] as String? ?? 'student',
+      mustChangePassword: data['mustChangePassword'] as bool? ?? false,
+      photoUrl: data['photoUrl'] as String?,
     );
   }
 }
 
 class AuthProvider extends ChangeNotifier {
-  final FirebaseAuth      _auth      = FirebaseAuth.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   UserProfile? _profile;
-  bool         _loading = true;
+  bool _loading = true;
 
   UserProfile? get userProfile => _profile;
-  bool         get isLoading   => _loading;
+  bool get isLoading => _loading;
 
   AuthProvider() {
-    // Listen for auth changes, then hydrate Firestore profile
     _auth.authStateChanges().listen(_onAuthStateChanged);
   }
 
@@ -57,7 +58,6 @@ class AuthProvider extends ChangeNotifier {
       _profile = null;
     } else {
       try {
-        // 1️⃣ Pull the Firestore record by email
         final snapshot = await _firestore
             .collection('users')
             .where('email', isEqualTo: user.email)
@@ -66,16 +66,33 @@ class AuthProvider extends ChangeNotifier {
 
         if (snapshot.docs.isNotEmpty) {
           final doc = snapshot.docs.first;
-          _profile = UserProfile.fromFirestore(doc.id, doc.data());
+          final profileData = doc.data();
+          final profile = UserProfile.fromFirestore(doc.id, profileData);
+
+          // If mustChangePassword is true, set to false automatically
+          if (profile.mustChangePassword) {
+            await _firestore.collection('users').doc(doc.id).update({
+              'mustChangePassword': false,
+            });
+
+            // Create a new UserProfile with mustChangePassword: false
+            _profile = UserProfile(
+              uid: profile.uid,
+              name: profile.name,
+              email: profile.email,
+              role: profile.role,
+              matricNumber: profile.matricNumber,
+              staffNumber: profile.staffNumber,
+              mustChangePassword: false,
+              photoUrl: profile.photoUrl,
+            );
+          } else {
+            _profile = profile;
+          }
         } else {
-          debugPrint(
-              '[AuthProvider] ⚠️ No Firestore user doc for ${user.email}; '
-                  'setting local profile to null.'
-          );
           _profile = null;
         }
       } catch (e) {
-        debugPrint('[AuthProvider] ❌ Firestore lookup failed: $e');
         _profile = null;
       }
     }
@@ -84,42 +101,50 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sign in by IC + password: hydrates profile immediately.
-  Future<UserProfile> signInWithIC(String ic, String password) async {
-    // Lookup Firestore record by IC
-    final query = await _firestore
+  /// AuthProvider: Unified login by matricNo or staffNumber
+  Future<UserProfile> signInWithIdentifier(String identifier, String password) async {
+    // Attempt lookup by matricNo
+    var query = await _firestore
         .collection('users')
-        .where('ic', isEqualTo: ic)
+        .where('matricNo', isEqualTo: identifier)
         .limit(1)
         .get();
 
+    // If not found, try staffNumber
     if (query.docs.isEmpty) {
-      throw FirebaseAuthException(
-        code   : 'user-not-found',
-        message: 'No account found for IC $ic.',
-      );
+      query = await _firestore
+          .collection('users')
+          .where('staffNumber', isEqualTo: identifier)
+          .limit(1)
+          .get();
+      if (query.docs.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'user-not-found',
+          message: 'No account found for $identifier.',
+        );
+      }
     }
 
-    final data  = query.docs.first.data();
+    // Extract email for Firebase Auth
+    final data = query.docs.first.data();
     final email = data['email'] as String?;
     if (email == null || email.isEmpty) {
       throw FirebaseAuthException(
-        code   : 'invalid-user',
-        message: 'User record for IC $ic is missing an email.',
+        code: 'invalid-user',
+        message: 'User record for $identifier is missing an email.',
       );
     }
 
-    // Authenticate
+    // Sign in with email & password
     await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-    // Immediately fetch the Firestore profile to avoid UI lag
+    // Reload user profile
     final postQuery = await _firestore
         .collection('users')
         .where('email', isEqualTo: email)
         .limit(1)
         .get();
-
-    final doc     = postQuery.docs.first;
+    final doc = postQuery.docs.first;
     final profile = UserProfile.fromFirestore(doc.id, doc.data());
 
     _profile = profile;
@@ -128,41 +153,87 @@ class AuthProvider extends ChangeNotifier {
     return profile;
   }
 
-  /// Send reset link by IC (unchanged)
-  Future<void> sendResetLinkByIC(String ic) async {
+  /// Send reset link by Matric No
+  Future<void> sendResetLinkByMatricNo(String matricNo) async {
     final query = await _firestore
         .collection('users')
-        .where('ic', isEqualTo: ic)
+        .where('matricNo', isEqualTo: matricNo)
         .limit(1)
         .get();
-    if (query.docs.isEmpty) return;
 
-    final doc   = query.docs.first;
-    final data  = doc.data();
-    final email = data['email'] as String?;
-    if (email == null || email.isEmpty) {
+    if (query.docs.isEmpty) {
+      print('[DEBUG] No account found for $matricNo');
       throw FirebaseAuthException(
-        code   : 'invalid-user',
-        message: 'User record for IC $ic has no email.',
+        code: 'user-not-found',
+        message: 'No account found for Matric No $matricNo.',
+      );
+    }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+    final email = data['email'] as String?;
+    print('[DEBUG] Fetched email: $email');
+    if (email == null || email.isEmpty) {
+      print('[DEBUG] User record missing email');
+      throw FirebaseAuthException(
+        code: 'invalid-user',
+        message: 'User record for Matric No $matricNo is missing an email.',
       );
     }
 
     final methods = await _auth.fetchSignInMethodsForEmail(email);
-    if (methods.isEmpty) {
-      // Create temp user if none exists
-      const chars   = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      final rnd     = Random.secure();
-      final tempPwd = List.generate(16, (_) => chars[rnd.nextInt(chars.length)]).join();
+    print('[DEBUG] Sign in methods for $email: $methods');
 
-      await _auth.createUserWithEmailAndPassword(email: email, password: tempPwd);
+    if (methods.isEmpty) {
+      print('[DEBUG] No Firebase user, creating one...');
+      final tempPwd = _generateTempPassword();
+      try {
+        await _auth.createUserWithEmailAndPassword(email: email, password: tempPwd);
+        print('[DEBUG] Firebase user created.');
+      } catch (e) {
+        print('[DEBUG] Firebase user might already exist: $e');
+      }
       await _auth.signOut();
+      await _firestore.collection('users').doc(doc.id).update({
+        'mustChangePassword': true,
+      });
+    } else {
+      print('[DEBUG] User already exists, just updating flag.');
       await _firestore.collection('users').doc(doc.id).update({
         'mustChangePassword': true,
       });
     }
 
+    print('[DEBUG] Sending reset email to $email...');
     await _auth.sendPasswordResetEmail(email: email);
+    print('[DEBUG] Password reset email sent to $email');
+    await _auth.signOut();
+  }
+
+  /// Generates a cryptographically secure temporary password of [length].
+  String _generateTempPassword([int length = 16]) {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rnd = Random.secure();
+    return List.generate(length, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 
   Future<void> signOut() => _auth.signOut();
+
+  static Future<Map<String, dynamic>?> getCurrentLecturer() async {
+    // TODO: Replace this stub with real logic to fetch the logged-in staff number.
+    String? staffNumber = await _getLoggedInStaffNumber();
+    if (staffNumber == null) return null;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(staffNumber)
+        .get();
+    if (!doc.exists) return null;
+    return doc.data();
+  }
+
+  static Future<String?> _getLoggedInStaffNumber() async {
+    // Replace with real authentication/user state logic.
+    return '1024';
+  }
 }

@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../auth_provider.dart';
 import '../ui/background.dart';
 
 /// SessionListPage: corporate-themed attendance overview,
@@ -26,14 +27,28 @@ class _SessionListPageState extends State<SessionListPage>
   final GlobalKey<RefreshIndicatorState> _refreshKey =
   GlobalKey<RefreshIndicatorState>();
 
+  String? lecturerStaffNumber;
+  String? lecturerName;
+
   @override
   void initState() {
     super.initState();
-    // Animate background subtly
     _bgAnimController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 5),
     )..repeat(reverse: true);
+
+    _loadLecturer();
+  }
+
+  Future<void> _loadLecturer() async {
+    final user = await AuthProvider.getCurrentLecturer();
+    if (mounted && user != null) {
+      setState(() {
+        lecturerStaffNumber = user['staffNumber'];
+        lecturerName = user['name'];
+      });
+    }
   }
 
   @override
@@ -52,146 +67,49 @@ class _SessionListPageState extends State<SessionListPage>
     }
   }
 
-  Future<Map<String, int>> _fetchStudentStats(
-      String uid, List<String> sessionIds) async {
-    final query = await _db.collectionGroup('attendees').get();
-    final presentIds = query.docs
-        .where((d) => d.id == uid)
-        .map((d) => d.reference.parent.parent!.id)
-        .toSet();
-    final present = sessionIds.where(presentIds.contains).length;
-    return {'present': present, 'total': sessionIds.length};
-  }
-
+  // Placeholder for shimmer loading
   Widget _buildShimmerPlaceholder() {
-    return const ShimmerLoading(
-      child: Card(
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        shape: RoundedRectangleBorder(),
-        child: SizedBox(height: 80),
-      ),
+    return const Card(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(),
+      child: SizedBox(height: 80),
     );
   }
 
+  // Animated expansion for each subject group
   Widget _buildAnimatedSessionCard(
       String subject,
       List<QueryDocumentSnapshot<Map<String, dynamic>>> sessions,
       List<String> sessionIds,
       ) {
-    return AnimatedExpansionTile(
-      title: subject,
-      subtitle: '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
-      heroTag: subject,
-      children: [
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _db
-              .collection('users')
-              .where('role', isEqualTo: 'student')
-              .snapshots(),
-          builder: (ctx, stuSnap) {
-            if (stuSnap.connectionState == ConnectionState.waiting) {
-              return _buildShimmerPlaceholder();
-            }
-            if (stuSnap.hasError) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Error loading students',
-                    style: TextStyle(color: Colors.red)),
-              );
-            }
-            final students = stuSnap.data?.docs ?? [];
-            if (students.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No students registered'),
-              );
-            }
-            return Column(
-              children: students.map((stu) {
-                final uid = stu.id;
-                final name = (stu.data()['name'] as String?)?.trim() ?? '—';
-                return FutureBuilder<Map<String, int>>(
-                  future: _fetchStudentStats(uid, sessionIds),
-                  builder: (c3, statSnap) {
-                    if (statSnap.connectionState != ConnectionState.done ||
-                        statSnap.data == null) {
-                      return _buildShimmerPlaceholder();
-                    }
-                    final stats = statSnap.data!;
-                    final present = stats['present']!;
-                    final total = stats['total']!;
-                    final percent = total > 0
-                        ? ((present / total) * 100).round()
-                        : 0;
-                    final isPerfect = percent == 100;
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        leading: Icon(
-                          isPerfect
-                              ? Icons.check_circle_outline
-                              : Icons.highlight_off,
-                          color: isPerfect ? Colors.green : Colors.redAccent,
-                          size: 28,
-                        ),
-                        title: Text(
-                          name,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        subtitle: Text(
-                          '$percent% ($present/$total)',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        trailing: isPerfect
-                            ? null
-                            : ElevatedButton(
-                          onPressed: () async {
-                            final warning =
-                                'Absent on ${DateFormat('yyyy-MM-dd').format(DateTime.now())}';
-                            await _db
-                                .collection('users')
-                                .doc(uid)
-                                .update({
-                              'warnings':
-                              FieldValue.arrayUnion([warning])
-                            });
-                            if (mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(
-                                content:
-                                Text('Warning sent to $name'),
-                              ));
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            elevation: 2,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'WARN',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
+    return ExpansionTile(
+      title: Text(subject, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text('${sessions.length} session${sessions.length == 1 ? '' : 's'}'),
+      children: sessions.map((session) {
+        final s = session.data();
+        final section = s['section'];
+        final attType = s['attendanceType'];
+        final date = s['date'];
+        final startTime = s['startTime'];
+        final endTime = s['endTime'];
+        final duration = s['duration'] ?? '';
+        return ListTile(
+          title: Text('Section $section'),
+          subtitle: Text('$attType • $date • $startTime–$endTime ($duration)'),
+          trailing: Icon(Icons.arrow_forward_ios_rounded, size: 18, color: Colors.blueAccent),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SessionDetailPage(
+                  subject: subject,
+                  sessions: sessions,
+                ),
+              ),
             );
           },
-        ),
-      ],
+        );
+      }).toList(),
     );
   }
 
@@ -214,13 +132,20 @@ class _SessionListPageState extends State<SessionListPage>
       ),
       body: Stack(
         children: [
-          // full-bleed animated background
+          // Animated background (replace with your own or remove)
           AnimatedBuilder(
             animation: _bgAnimController,
-            builder: (_, __) => const AnimatedWebBackground(),
+            builder: (_, __) => Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue, Colors.lightBlueAccent],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+            ),
           ),
-
-          // content with pull-to-refresh
+          // Sessions list with refresh
           RefreshIndicator(
             key: _refreshKey,
             onRefresh: _onRefresh,
@@ -228,89 +153,66 @@ class _SessionListPageState extends State<SessionListPage>
             color: Colors.white,
             backgroundColor: Colors.blueAccent,
             edgeOffset: 48,
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream:
-              _db.collection('attendanceSessions').snapshots(),
+            child: lecturerStaffNumber == null
+                ? ListView(
+              padding: const EdgeInsets.only(top: kToolbarHeight + 32),
+              children: const [
+                Center(child: CircularProgressIndicator()),
+              ],
+            )
+                : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _db
+                  .collection('attendanceSessions')
+                  .where('lecturerStaffNumber', isEqualTo: lecturerStaffNumber)
+                  .orderBy('date', descending: true)
+                  .snapshots(),
               builder: (ctx, snap) {
-                if (snap.connectionState ==
-                    ConnectionState.waiting) {
+                if (snap.connectionState == ConnectionState.waiting) {
                   return ListView.builder(
-                    padding: const EdgeInsets.only(
-                        top: kToolbarHeight + 16),
+                    padding: const EdgeInsets.only(top: kToolbarHeight + 16),
                     itemCount: 4,
-                    itemBuilder: (_, __) =>
-                        _buildShimmerPlaceholder(),
+                    itemBuilder: (_, __) => _buildShimmerPlaceholder(),
                   );
                 }
                 if (snap.hasError) {
-                  return Center(
-                    child: Text(
-                      'Error loading sessions: ${snap.error}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
+                  return ListView(
+                    padding: const EdgeInsets.only(top: kToolbarHeight + 32),
+                    children: [
+                      Center(
+                        child: Text(
+                          'Error loading sessions: ${snap.error}',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
                   );
                 }
                 final docs = snap.data?.docs ?? [];
                 if (docs.isEmpty) {
                   return ListView(
-                    padding: const EdgeInsets.only(
-                        top: kToolbarHeight + 16),
+                    padding: const EdgeInsets.only(top: kToolbarHeight + 32),
                     children: const [
-                      Center(child: Text('No sessions found')),
+                      Center(child: Text('No sessions found', style: TextStyle(fontSize: 16))),
                     ],
                   );
                 }
-                final bySubject = <String,
-                    List<QueryDocumentSnapshot<
-                        Map<String, dynamic>>>>{};
+                final bySubject = <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
                 for (var d in docs) {
-                  final subj = (d.data()['subject']
-                  as String?)
-                      ?.trim() ??
-                      '—';
-                  bySubject
-                      .putIfAbsent(subj, () => [])
-                      .add(d);
+                  final subj = (d.data()['subject'] as String?)?.trim() ?? '—';
+                  bySubject.putIfAbsent(subj, () => []).add(d);
                 }
-                final subjects = bySubject.keys.toList()
-                  ..sort();
+                final subjects = bySubject.keys.toList()..sort();
 
                 return ListView.builder(
-                  padding: const EdgeInsets.only(
-                      top: kToolbarHeight + 16),
+                  padding: const EdgeInsets.only(top: kToolbarHeight + 16),
                   itemCount: subjects.length,
                   itemBuilder: (context, index) {
                     final subj = subjects[index];
                     final sessions = bySubject[subj]!;
-                    final sessionIds =
-                    sessions.map((d) => d.id).toList();
+                    final sessionIds = sessions.map((d) => d.id).toList();
                     return Padding(
-                      padding:
-                      const EdgeInsets.only(bottom: 8),
-                      child: GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          PageRouteBuilder(
-                            transitionDuration:
-                            const Duration(
-                                milliseconds: 600),
-                            pageBuilder:
-                                (ctx, anim1, anim2) =>
-                                FadeTransition(
-                                  opacity: anim1,
-                                  child: SessionDetailPage(
-                                    subject: subj,
-                                    sessions: sessions,
-                                  ),
-                                ),
-                          ),
-                        ),
-                        child: Hero(
-                          tag: subj,
-                          child: _buildAnimatedSessionCard(
-                              subj, sessions, sessionIds),
-                        ),
-                      ),
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _buildAnimatedSessionCard(subj, sessions, sessionIds),
                     );
                   },
                 );
@@ -483,14 +385,34 @@ class _AnimatedExpansionTileState
 /// Details of sessions with Hero animation.
 class SessionDetailPage extends StatelessWidget {
   final String subject;
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>>
-  sessions;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> sessions;
 
   const SessionDetailPage({
     required this.subject,
     required this.sessions,
     Key? key,
   }) : super(key: key);
+
+  String _formatDate(dynamic dateValue) {
+    // Handles both Timestamp and String
+    if (dateValue is Timestamp) {
+      return DateFormat('yyyy-MM-dd').format(dateValue.toDate());
+    }
+    if (dateValue is String) {
+      return dateValue;
+    }
+    return '—';
+  }
+
+  String _formatTime(dynamic t) {
+    if (t == null) return '—';
+    return t.toString();
+  }
+
+  String _formatLecturer(dynamic name) {
+    if (name is String && name.trim().isNotEmpty) return name;
+    return '—';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -503,14 +425,13 @@ class SessionDetailPage extends StatelessWidget {
         title: const Text('Session Details',
             style: TextStyle(color: Colors.white)),
         leading: IconButton(
-          icon:
-          const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: Stack(
         children: [
-          // direct background; no controller needed here
+          // Replace with your animated background widget
           const AnimatedWebBackground(),
           SafeArea(
             top: false,
@@ -518,6 +439,7 @@ class SessionDetailPage extends StatelessWidget {
               padding: const EdgeInsets.only(
                   top: kToolbarHeight + 16, bottom: 32),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Hero(
                     tag: subject,
@@ -525,41 +447,83 @@ class SessionDetailPage extends StatelessWidget {
                       margin: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       shape: RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12)),
                       elevation: 6,
                       child: Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Text(subject,
-                            style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight:
-                                FontWeight.bold)),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.menu_book_rounded,
+                                color: Colors.blue, size: 32),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Text(
+                                subject,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  for (var doc in sessions)
-                    Card(
+                  ...sessions.map((doc) {
+                    final data = doc.data();
+                    final section = data['section'] ?? '—';
+                    final attendanceType =
+                        data['attendanceType'] ?? '—';
+                    final lecturer = _formatLecturer(data['lecturerName']);
+                    final date = _formatDate(data['date']);
+                    final startTime = _formatTime(data['startTime']);
+                    final endTime = _formatTime(data['endTime']);
+                    final duration = _formatTime(data['duration']);
+
+                    return Card(
                       margin: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       shape: RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 4,
                       child: ListTile(
-                        title: Text(
-                          DateFormat(
-                              'yyyy-MM-dd – HH:mm')
-                              .format((doc.data()[
-                          'date']
-                          as Timestamp)
-                              .toDate()),
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blueAccent,
+                          child: Text(
+                            section.toString(),
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                         ),
-                        subtitle: Text(
-                            'Subject: ${(doc.data()['subject']
-                            as String?)
-                                ?.trim() ??
-                                '—'}'),
+                        title: Text(
+                          'Section $section – $attendanceType',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Lecturer: $lecturer'),
+                              Text('Date: $date'),
+                              Text('Time: $startTime - $endTime ($duration)'),
+                            ],
+                          ),
+                        ),
+                        trailing: const Icon(Icons.event_note, color: Colors.blueAccent),
+                      ),
+                    );
+                  }),
+                  if (sessions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 32.0),
+                      child: Center(
+                        child: Text(
+                          'No sessions for this subject.',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
                       ),
                     ),
                 ],
@@ -571,7 +535,3 @@ class SessionDetailPage extends StatelessWidget {
     );
   }
 }
-
-// -----------------------------------------------------------------------------
-// End of session_list_page.dart — 400+ lines complete
-// -----------------------------------------------------------------------------
