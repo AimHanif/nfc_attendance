@@ -195,113 +195,107 @@ class _StudentDashboardState extends State<StudentDashboard>
 
                   // session list filtered to enrolled subjects
                   Expanded(
-                    child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      future: _db.collection('users').doc(_uid).get(),
-                      builder: (ctx1, userSnap) {
-                        if (userSnap.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                              child: CircularProgressIndicator());
+                    child: FutureBuilder<List<String>>(
+                      // 1️⃣ Load enrolled subjects from sub-collection
+                      future: _db
+                          .collection('users')
+                          .doc(_uid)
+                          .collection('subjects')
+                          .get()
+                          .then((snap) =>
+                          snap.docs.map((d) => d.id.trim()).toList()
+                      ),
+                      builder: (ctx1, subSnap) {
+                        if (subSnap.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
                         }
-                        if (!userSnap.hasData || !userSnap.data!.exists) {
+                        if (subSnap.hasError) {
                           return Center(
                             child: Text(
-                              'Error loading your enrollment data',
+                              'Error loading your enrolled subjects',
                               style: TextStyle(color: Colors.red.shade300),
                             ),
                           );
                         }
 
-                        // pull student subjects from their user doc
-                        final userData = userSnap.data!.data()!;
-                        final enrolledSubs = (userData['subjects']
-                        as List<dynamic>?)
-                            ?.map((e) => (e['name'] as String).trim())
-                            .toList() ??
-                            <String>[];
+                        final enrolledSubs = subSnap.data ?? <String>[];
 
-                        return StreamBuilder<
-                            QuerySnapshot<Map<String, dynamic>>>(
-                          stream:
-                          _db.collection('attendanceSessions').snapshots(),
+                        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _db.collection('attendanceSessions').snapshots(),
                           builder: (ctx2, snap) {
-                            if (snap.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Center(
-                                  child: CircularProgressIndicator());
+                            if (snap.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
                             }
                             if (snap.hasError) {
                               return Center(
-                                child: Text('Error loading sessions',
-                                    style:
-                                    TextStyle(color: Colors.red.shade300)),
+                                child: Text(
+                                  'Error loading sessions',
+                                  style: TextStyle(color: Colors.red.shade300),
+                                ),
                               );
                             }
-                            var docs = snap.data?.docs ?? [];
 
-                            // only sessions for enrolled subjects
-                            docs = docs
-                                .where((d) => enrolledSubs.contains(
-                                (d.data()['subject'] as String).trim()))
-                                .toList();
-
-                            // apply subject filter
-                            if (_filterSubject != 'All') {
+                            // 2️⃣ Filter down to only enrolled subjects
+                            var docs = snap.data!.docs;
+                            if (enrolledSubs.isNotEmpty) {
                               docs = docs
                                   .where((d) =>
-                              (d.data()['subject'] as String).trim() ==
-                                  _filterSubject)
+                                  enrolledSubs.contains((d.data()['subject'] as String).trim())
+                              )
                                   .toList();
                             }
 
-                            // apply sorting
+                            // 3️⃣ Apply subject filter dropdown
+                            if (_filterSubject != 'All') {
+                              docs = docs
+                                  .where((d) =>
+                              (d.data()['subject'] as String).trim() == _filterSubject
+                              )
+                                  .toList();
+                            }
+
+                            // 4️⃣ Sort by Date / Subject / Lecturer
                             switch (_sortBy) {
                               case 'Subject':
-                                docs.sort((a, b) => (a.data()['subject']
-                                as String)
-                                    .compareTo(b.data()['subject'] as String));
+                                docs.sort((a, b) =>
+                                    (a.data()['subject'] as String)
+                                        .compareTo(b.data()['subject'] as String)
+                                );
                                 break;
                               case 'Lecturer':
-                                docs.sort((a, b) => (a.data()['lecturer']
-                                as String)
-                                    .compareTo(b.data()['lecturer'] as String));
+                                docs.sort((a, b) =>
+                                    (a.data()['lecturer'] as String)
+                                        .compareTo(b.data()['lecturer'] as String)
+                                );
                                 break;
                               case 'Date':
                               default:
                                 docs.sort((a, b) {
-                                  final da = (a.data()['date'] as Timestamp)
-                                      .toDate();
-                                  final db_ = (b.data()['date'] as Timestamp)
-                                      .toDate();
+                                  final da = (a.data()['date'] as Timestamp).toDate();
+                                  final db_ = (b.data()['date'] as Timestamp).toDate();
                                   return db_.compareTo(da);
                                 });
                             }
 
+                            // 5️⃣ Build the list
                             return RefreshIndicator(
                               onRefresh: _handleRefresh,
                               child: ListView.builder(
-                                physics:
-                                const AlwaysScrollableScrollPhysics(),
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 itemCount: docs.length,
                                 itemBuilder: (ctx3, i) {
                                   final session = docs[i];
                                   final data = session.data();
                                   final id = session.id;
-                                  final date = (data['date'] as Timestamp?)
-                                      ?.toDate();
-                                  final subj = (data['subject'] as String)
-                                      .trim();
+                                  final date = (data['date'] as Timestamp?)?.toDate();
+                                  final subj = (data['subject'] as String).trim();
 
-                                  final start = (i *
-                                      _staggerInterval.inMilliseconds) /
-                                      _listAnimController
-                                          .duration!
-                                          .inMilliseconds;
+                                  final start = (i * _staggerInterval.inMilliseconds)
+                                      / _listAnimController.duration!.inMilliseconds;
                                   final end = (start + 0.3).clamp(0.0, 1.0);
                                   final anim = CurvedAnimation(
                                     parent: _listAnimController,
-                                    curve: Interval(start, end,
-                                        curve: Curves.easeOut),
+                                    curve: Interval(start, end, curve: Curves.easeOut),
                                   );
 
                                   return FadeTransition(
@@ -309,19 +303,17 @@ class _StudentDashboardState extends State<StudentDashboard>
                                     child: SlideTransition(
                                       position: Tween<Offset>(
                                           begin: const Offset(0, .1),
-                                          end: Offset.zero)
-                                          .animate(anim),
+                                          end: Offset.zero
+                                      ).animate(anim),
                                       child: FutureBuilder<bool>(
                                         future: _didAttend(_uid!, id),
                                         builder: (c1, attSnap) {
                                           if (!attSnap.hasData &&
-                                              attSnap.connectionState !=
-                                                  ConnectionState.done) {
+                                              attSnap.connectionState != ConnectionState.done) {
                                             return _loadingCard();
                                           }
                                           if (attSnap.hasError) {
-                                            return _errorCard(
-                                                'Error loading attendance');
+                                            return _errorCard('Error loading attendance');
                                           }
                                           final present = attSnap.data!;
                                           return Card(
@@ -329,57 +321,45 @@ class _StudentDashboardState extends State<StudentDashboard>
                                                 ? Colors.green.shade300
                                                 : Colors.red.shade300,
                                             shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                BorderRadius.circular(12)),
+                                                borderRadius: BorderRadius.circular(12)),
                                             margin: const EdgeInsets.symmetric(
                                                 horizontal: 16, vertical: 8),
                                             child: ExpansionTile(
-                                              backgroundColor:
-                                              Colors.transparent,
-                                              collapsedBackgroundColor:
-                                              Colors.transparent,
+                                              backgroundColor: Colors.transparent,
+                                              collapsedBackgroundColor: Colors.transparent,
                                               title: Column(
-                                                crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
                                                     date != null
-                                                        ? DateFormat('yyyy-MM-dd')
-                                                        .format(date)
+                                                        ? DateFormat('yyyy-MM-dd').format(date)
                                                         : 'Unknown date',
                                                     style: const TextStyle(
-                                                        color: Colors.white70,
-                                                        fontSize: 14),
+                                                        color: Colors.white70, fontSize: 14),
                                                   ),
                                                   const SizedBox(height: 4),
                                                   Text(subj,
                                                       style: const TextStyle(
                                                           color: Colors.white,
                                                           fontSize: 18,
-                                                          fontWeight:
-                                                          FontWeight.bold)),
+                                                          fontWeight: FontWeight.bold)),
                                                 ],
                                               ),
                                               subtitle: Text(
                                                 'Status: ${present ? 'Present' : 'Absent'}',
-                                                style: const TextStyle(
-                                                    color: Colors.white70),
+                                                style: const TextStyle(color: Colors.white70),
                                               ),
                                               children: [
                                                 FutureBuilder<DateTime?>(
-                                                  future: _attendanceTimestamp(
-                                                      _uid!, id),
+                                                  future: _attendanceTimestamp(_uid!, id),
                                                   builder: (c2, tsSnap) {
                                                     if (tsSnap.connectionState ==
                                                         ConnectionState.waiting) {
                                                       return const Padding(
-                                                        padding:
-                                                        EdgeInsets.all(12),
+                                                        padding: EdgeInsets.all(12),
                                                         child: Center(
-                                                            child:
-                                                            CircularProgressIndicator(
-                                                              color:
-                                                              Colors.white70,
+                                                            child: CircularProgressIndicator(
+                                                              color: Colors.white70,
                                                             )),
                                                       );
                                                     }
@@ -388,14 +368,11 @@ class _StudentDashboardState extends State<StudentDashboard>
                                                         ? 'Checked in on ${DateFormat('yyyy-MM-dd HH:mm').format(dt)}'
                                                         : 'No record';
                                                     return Padding(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 16,
-                                                          vertical: 12),
+                                                      padding: const EdgeInsets.symmetric(
+                                                          horizontal: 16, vertical: 12),
                                                       child: Text(msg,
                                                           style: const TextStyle(
-                                                              color: Colors
-                                                                  .white70)),
+                                                              color: Colors.white70)),
                                                     );
                                                   },
                                                 )
@@ -478,4 +455,17 @@ class _StudentDashboardState extends State<StudentDashboard>
       },
     );
   }
+
+  /// — Helper: load subject names from users/{uid}/subjects sub‐collection
+  Future<List<String>> _loadEnrolledSubjects() async {
+    final snap = await _db
+        .collection('users')
+        .doc(_uid)
+        .collection('subjects')
+        .get();
+    // use either the document ID (if you named them “Algorithm”, etc.)
+    // or a `name` field inside each doc:
+    return snap.docs.map((d) => d.id.trim()).toList();
+  }
+
 }
