@@ -79,8 +79,9 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final identifier = _matricCtrl.text.trim().toUpperCase();
       await Provider.of<local_auth.AuthProvider>(context, listen: false)
-          .sendResetLinkByMatricNo(_matricCtrl.text.trim());
+          .sendResetLinkByIdentifier(identifier);
 
       _showSnack(
         'A password setup link has been sent to your registered email.',
@@ -90,7 +91,7 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
       await FirebaseAuth.instance.signOut();
       Navigator.of(context).pushReplacementNamed(AppRoutes.login);
     } catch (e) {
-      _showSnack('Error: $e', Colors.redAccent);
+      _showSnack('Error: ${e.toString()}', Colors.redAccent);
     } finally {
       setState(() => _isLoading = false);
     }
@@ -205,13 +206,10 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
                               ),
                             ),
                             validator: (v) {
-                              final matric = v?.trim() ?? '';
-                              if (matric.isEmpty) {
-                                return 'Matric No required';
-                              }
-                              if (!RegExp(r'^[A-Za-z]{2}\d{6}$')
-                                  .hasMatch(matric)) {
-                                return 'Example: DI230101';
+                              final id = v?.trim().toUpperCase() ?? '';
+                              if (id.isEmpty) return 'Matric or Staff No required';
+                              if (!RegExp(r'^[A-Z]{2}\d{6}$').hasMatch(id) && !RegExp(r'^\d{4,}$').hasMatch(id)) {
+                                return 'Use a valid Matric No (e.g. DI230101) or Staff No (e.g. 1023)';
                               }
                               return null;
                             },

@@ -154,59 +154,69 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Send reset link by Matric No
-  Future<void> sendResetLinkByMatricNo(String matricNo) async {
-    final query = await _firestore
+  Future<void> sendResetLinkByIdentifier(String identifier) async {
+    QuerySnapshot<Map<String, dynamic>> query;
+
+    // First try matricNo
+    query = await _firestore
         .collection('users')
-        .where('matricNo', isEqualTo: matricNo)
+        .where('matricNo', isEqualTo: identifier)
         .limit(1)
         .get();
 
+    // If not found, try staffNumber
     if (query.docs.isEmpty) {
-      print('[DEBUG] No account found for $matricNo');
+      query = await _firestore
+          .collection('users')
+          .where('staffNumber', isEqualTo: identifier)
+          .limit(1)
+          .get();
+    }
+
+    if (query.docs.isEmpty) {
+      debugPrint('[DEBUG] No account found for $identifier');
       throw FirebaseAuthException(
         code: 'user-not-found',
-        message: 'No account found for Matric No $matricNo.',
+        message: 'No account found for identifier $identifier.',
       );
     }
 
     final doc = query.docs.first;
     final data = doc.data();
     final email = data['email'] as String?;
-    print('[DEBUG] Fetched email: $email');
+    debugPrint('[DEBUG] Fetched email: $email');
+
     if (email == null || email.isEmpty) {
-      print('[DEBUG] User record missing email');
       throw FirebaseAuthException(
         code: 'invalid-user',
-        message: 'User record for Matric No $matricNo is missing an email.',
+        message: 'User record for $identifier is missing an email.',
       );
     }
 
     final methods = await _auth.fetchSignInMethodsForEmail(email);
-    print('[DEBUG] Sign in methods for $email: $methods');
+    debugPrint('[DEBUG] Sign in methods for $email: $methods');
 
     if (methods.isEmpty) {
-      print('[DEBUG] No Firebase user, creating one...');
       final tempPwd = _generateTempPassword();
       try {
         await _auth.createUserWithEmailAndPassword(email: email, password: tempPwd);
-        print('[DEBUG] Firebase user created.');
+        debugPrint('[DEBUG] Firebase user created.');
       } catch (e) {
-        print('[DEBUG] Firebase user might already exist: $e');
+        debugPrint('[DEBUG] Firebase user might already exist: $e');
       }
       await _auth.signOut();
       await _firestore.collection('users').doc(doc.id).update({
         'mustChangePassword': true,
       });
     } else {
-      print('[DEBUG] User already exists, just updating flag.');
+      debugPrint('[DEBUG] User already exists, updating flag.');
       await _firestore.collection('users').doc(doc.id).update({
         'mustChangePassword': true,
       });
     }
 
-    print('[DEBUG] Sending reset email to $email...');
+    debugPrint('[DEBUG] Sending reset email to $email...');
     await _auth.sendPasswordResetEmail(email: email);
-    print('[DEBUG] Password reset email sent to $email');
     await _auth.signOut();
   }
 
