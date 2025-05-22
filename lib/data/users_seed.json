@@ -1,20 +1,4 @@
 {
-  "1023": {
-    "staffNumber": "1023",
-    "email": "di230101@student.uthm.edu.my",
-    "name": "Dr Dummy",
-    "role": "lecturer",
-    "subjects": [
-      {
-        "name": "Algorithm",
-        "sections": [3, 7]
-      },
-      {
-        "name": "Machine Learning",
-        "sections": [4, 5, 6]
-      }
-    ]
-  },
   "DI230101": {
     "matricNo": "DI230101",
     "email": "hanifworkmy@gmail.com",
@@ -23,11 +7,11 @@
     "subjects": [
       {
         "name": "Algorithm",
-        "sections": [3, 7]
+        "sections": [3]
       },
       {
         "name": "Machine Learning",
-        "sections": [4, 5, 6]
+        "sections": [6]
       }
     ]
   }

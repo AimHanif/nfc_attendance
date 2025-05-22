@@ -382,7 +382,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                     ),
 
                     const SizedBox(height: 24),
-                    const Text('© 2025 NFC Attendance', style: TextStyle(color: Colors.white54)),
+                    const Text('©️ 2025 NFC Attendance', style: TextStyle(color: Colors.white54)),
                     const SizedBox(height: 16),
                   ],
                 ),

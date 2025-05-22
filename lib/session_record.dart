@@ -2,6 +2,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Represents a single attendance session, pulling its first section
+/// out of the Firestore `sections` array for display in the UI.
 class SessionRecord {
   final String id;
   final DateTime date;
@@ -25,21 +27,26 @@ class SessionRecord {
     required this.durationHours,
   });
 
+  /// Build a SessionRecord from a Firestore document.
   factory SessionRecord.fromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Read strings (or default)
-    final section       = data['section']       as String? ?? '–';
-    final attendanceType= data['attendanceType']as String? ?? '–';
-    final start         = data['start']         as String? ?? '00:00';
-    final end           = data['end']           as String? ?? '00:00';
+    // ─── Extract the first section from the `sections` array ─────────────
+    final rawSections = data['sections'] as List<dynamic>? ?? [];
+    final section = rawSections.isNotEmpty
+        ? rawSections.first.toString()
+        : '–';
 
-    // Compute duration from start/end if no explicit field:
+    // ─── Other fields (with safe defaults) ────────────────────────────────
+    final attendanceType = data['attendanceType'] as String? ?? '–';
+    final start          = data['start']         as String? ?? '00:00';
+    final end            = data['end']           as String? ?? '00:00';
+
+    // ─── Compute duration from stored or derived value ───────────────────
     double duration;
     if ((data['durationHours'] as num?) != null) {
       duration = (data['durationHours'] as num).toDouble();
     } else {
-      // parse "HH:mm"
       int parseMin(String s) {
         final parts = s.split(':');
         return int.parse(parts[0]) * 60 + int.parse(parts[1]);
@@ -50,15 +57,15 @@ class SessionRecord {
     }
 
     return SessionRecord(
-      id:             doc.id,
-      date:           (data['date'] as Timestamp).toDate(),
-      subject:        data['subject']        as String? ?? '–',
-      lecturer:       data['lecturer']       as String? ?? '–',
-      section:        section,
-      attendanceType: attendanceType,
-      start:          start,
-      end:            end,
-      durationHours:  duration,
+      id:              doc.id,
+      date:            (data['date'] as Timestamp).toDate(),
+      subject:         data['subject']        as String? ?? '–',
+      lecturer:        data['lecturer']       as String? ?? '–',
+      section:         section,
+      attendanceType:  attendanceType,
+      start:           start,
+      end:             end,
+      durationHours:   duration,
     );
   }
 }

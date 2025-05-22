@@ -261,7 +261,7 @@ class AttendanceController extends ChangeNotifier {
     statusMessage = '🔄 Scanning NFC…';
     notifyListeners();
 
-    // 1️⃣ Poll the tag
+    // 1️⃣ Poll the NFC tag
     NFCTag tag;
     try {
       tag = await FlutterNfcKit.poll(
@@ -275,7 +275,7 @@ class AttendanceController extends ChangeNotifier {
       return;
     }
 
-    // 2️⃣ Read raw payload (encrypted or tag.id)
+    // 2️⃣ Read raw payload (encrypted or fallback to tag.id)
     String raw = '';
     try {
       if (tag.ndefAvailable == true) {
@@ -293,7 +293,7 @@ class AttendanceController extends ChangeNotifier {
       return;
     }
 
-    // 3️⃣ Decrypt if needed
+    // 3️⃣ Decrypt if payload was encrypted
     String matric;
     try {
       matric = _decryptMatric(raw);
@@ -307,38 +307,67 @@ class AttendanceController extends ChangeNotifier {
         .where('matricNo', isEqualTo: matric)
         .limit(1)
         .get();
+
     if (usersSnap.docs.isEmpty) {
       statusMessage = '❌ Unknown Matric: $matric';
       isScanning    = false;
       notifyListeners();
       return;
     }
+
     final userDoc = usersSnap.docs.first;
+    final userId  = userDoc.id;                          // ← use this ID for sub‐collections
     final data    = userDoc.data();
     final name    = data['name']     as String? ?? 'Unknown';
     final photo   = data['photoUrl'] as String?;
-    final timeStr = DateFormat.Hm().format(DateTime.now());
 
-    final sessionRef = _db
-        .collection('attendanceSessions')
-        .doc(activeSession!.id);
+    // 5️⃣ Verify that subject document exists under /users/{userId}/subjects/{subject}
+    final subjectDoc = await _db
+        .collection('users')
+        .doc(userId)
+        .collection('subjects')
+        .doc(activeSession!.subject)
+        .get();
 
-    // ─── Prevent duplicate ──────────────────────────────────────────────
-    final attendeeRef  = sessionRef.collection('attendees').doc(userDoc.id);
+    if (!subjectDoc.exists) {
+      statusMessage = '❌ $name is not enrolled in ${activeSession!.subject}';
+      isScanning    = false;
+      notifyListeners();
+      return;
+    }
+
+    // 6️⃣ Check if the session’s section is in their enrolled sections array
+    final rawSections = subjectDoc.data()?['sections'] as List<dynamic>? ?? [];
+    final enrolledSections = rawSections.map((e) => e.toString()).toList();
+    final sessionSection  = activeSession!.section.toString();
+
+    if (!enrolledSections.contains(sessionSection)) {
+      statusMessage =
+      '❌ $name is not enrolled in ${activeSession!.subject} Section ${activeSession!.section}';
+      isScanning = false;
+      notifyListeners();
+      return;
+    }
+
+    // 7️⃣ Prevent duplicate attendance
+    final sessionRef   = _db.collection('attendanceSessions').doc(activeSession!.id);
+    final attendeeRef  = sessionRef.collection('attendees').doc(userId);
     final attendeeSnap = await attendeeRef.get();
+    final nowStr       = DateFormat.Hm().format(DateTime.now());
+
     if (attendeeSnap.exists) {
-      final recordedTime = attendeeSnap.data()?['time'] as String? ?? timeStr;
+      final recordedTime = attendeeSnap.data()?['time'] as String? ?? nowStr;
       statusMessage = '✅ $name already recorded at $recordedTime';
       isScanning    = false;
       notifyListeners();
       return;
     }
 
-    // 5️⃣ Mark attendance
+    // 8️⃣ Mark attendance
     try {
       await attendeeRef.set({
         'timestamp': FieldValue.serverTimestamp(),
-        'time':      timeStr,
+        'time':      nowStr,
       });
     } catch (e) {
       statusMessage = '⚠️ Save failed: $e';
@@ -347,22 +376,22 @@ class AttendanceController extends ChangeNotifier {
       return;
     }
 
-    // 6️⃣ Persist scan history (optional)
+    // 9️⃣ Log into scanHistory (optional)
     try {
       await sessionRef.collection('scanHistory').add({
         'name':      name,
         'ic':        matric,
         'photoUrl':  photo,
-        'time':      timeStr,
+        'time':      nowStr,
         'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (_) {
-      // non‐critical if history logging fails
+      // non‐critical
     }
 
-    // 7️⃣ Refresh UI
+    // 🔟 Refresh UI
     await loadHistoryForSession();
-    statusMessage = '✅ $name recorded at $timeStr';
+    statusMessage = '✅ $name recorded at $nowStr';
     isScanning    = false;
     notifyListeners();
   }

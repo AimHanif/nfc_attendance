@@ -103,29 +103,34 @@ class AuthProvider extends ChangeNotifier {
 
   /// AuthProvider: Unified login by matricNo or staffNumber
   Future<UserProfile> signInWithIdentifier(String identifier, String password) async {
-    // Attempt lookup by matricNo
+    final rawId = identifier.trim();
+    final matricId = rawId.toUpperCase();
+
+    // 1) Try matricNo (stored in uppercase)
     var query = await _firestore
         .collection('users')
-        .where('matricNo', isEqualTo: identifier)
+        .where('matricNo', isEqualTo: matricId)
         .limit(1)
         .get();
 
-    // If not found, try staffNumber
+    // 2) If no match, try staffNumber
     if (query.docs.isEmpty) {
       query = await _firestore
           .collection('users')
-          .where('staffNumber', isEqualTo: identifier)
+          .where('staffNumber', isEqualTo: rawId)
           .limit(1)
           .get();
-      if (query.docs.isEmpty) {
-        throw FirebaseAuthException(
-          code: 'user-not-found',
-          message: 'No account found for $identifier.',
-        );
-      }
     }
 
-    // Extract email for Firebase Auth
+    // 3) If still empty, no such user
+    if (query.docs.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'No account found for $identifier.',
+      );
+    }
+
+    // Extract email and sign in
     final data = query.docs.first.data();
     final email = data['email'] as String?;
     if (email == null || email.isEmpty) {
@@ -135,10 +140,9 @@ class AuthProvider extends ChangeNotifier {
       );
     }
 
-    // Sign in with email & password
     await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-    // Reload user profile
+    // Reload full profile
     final postQuery = await _firestore
         .collection('users')
         .where('email', isEqualTo: email)

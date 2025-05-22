@@ -102,17 +102,17 @@ class ReadCardPage extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: Card(
                                 color: Colors.white.withOpacity(.9),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 elevation: 4,
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                                   child: DropdownButton<SessionRecord>(
                                     isExpanded: true,
                                     underline: const SizedBox(),
-                                    hint: const Text('Select session',
-                                        style: TextStyle(color: Colors.grey)),
+                                    hint: const Text(
+                                      'Select session',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
                                     value: ctrl.activeSession,
                                     items: ctrl.sessions
                                         .where((s) =>
@@ -122,7 +122,11 @@ class ReadCardPage extends StatelessWidget {
                                         .map((s) => DropdownMenuItem(
                                       value: s,
                                       child: Text(
-                                          '${DateFormat.yMMMd().format(s.date)} · ${s.subject}'),
+                                        // date · subject · section
+                                        '${DateFormat.yMMMd().format(s.date)} · '
+                                            '${s.subject} · '
+                                            'Section ${s.section}',
+                                      ),
                                     ))
                                         .toList(),
                                     onChanged: (s) {
@@ -131,24 +135,23 @@ class ReadCardPage extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            ),
-                        ] else ...[
+                            ),                        ] else ...[
                           // toggled “Existing-Session” view
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Card(
                               color: Colors.white.withOpacity(.9),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 4,
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                                 child: DropdownButton<SessionRecord>(
                                   isExpanded: true,
                                   underline: const SizedBox(),
-                                  hint: const Text('Select session',
-                                      style: TextStyle(color: Colors.grey)),
+                                  hint: const Text(
+                                    'Select session',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
                                   value: ctrl.activeSession,
                                   items: ctrl.sessions
                                       .where((s) =>
@@ -158,7 +161,10 @@ class ReadCardPage extends StatelessWidget {
                                       .map((s) => DropdownMenuItem(
                                     value: s,
                                     child: Text(
-                                        '${DateFormat.yMMMd().format(s.date)} · ${s.subject}'),
+                                      '${DateFormat.yMMMd().format(s.date)} · '
+                                          '${s.subject} · '
+                                          'Section ${s.section}',
+                                    ),
                                   ))
                                       .toList(),
                                   onChanged: (s) {
@@ -169,7 +175,6 @@ class ReadCardPage extends StatelessWidget {
                             ),
                           ),
                         ],
-
                         const SizedBox(height: 24),
 
                         // ─── Create vs Existing Buttons ──────
